@@ -146,10 +146,9 @@ $ docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 ```
 
 And paste the result into the **Administrator password** box.
+From here continue to customize Jenkins to your particular requirements.
 
 <img width="80%" alt="Customize Jenkins" src="https://user-images.githubusercontent.com/5332509/35367475-73a7bffc-014c-11e8-9b2e-c1dad1f0a482.png">
-
-From here continue to customize Jenkins to your particular requirements.
 
 ### Validate Docker from Jenkins
 
