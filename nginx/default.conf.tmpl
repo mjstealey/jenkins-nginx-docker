@@ -1,0 +1,25 @@
+server {
+
+    listen 80;
+    server_name FQDN_OR_IP;
+
+    location ^~ /jenkins/ {
+
+        proxy_set_header        Host $host:$server_port;
+        proxy_set_header        X-Real-IP $remote_addr;
+        proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header        X-Forwarded-Proto $scheme;
+
+        # Fix the "It appears that your reverse proxy set up is broken" error.
+        proxy_pass              http://DOCKER_NAME:8080/jenkins/;
+        proxy_read_timeout      90;
+
+        proxy_redirect          http://DOCKER_NAME:8080/jenkins http://FQDN_OR_IP/jenkins;
+
+        # Required for new HTTP-based CLI
+        proxy_http_version 1.1;
+        proxy_request_buffering off;
+        # workaround for https://issues.jenkins-ci.org/browse/JENKINS-45651
+        add_header 'X-SSH-Endpoint' 'FQDN_OR_IP:50022' always;
+    }
+}

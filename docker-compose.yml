@@ -1,0 +1,40 @@
+version: '3.1'
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - jenkins_network
+    links:
+      - jenkins
+    restart: always
+
+  jenkins:
+    image: jenkins.nginx.docker:lts
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: jenkins
+    ports:
+      - '2022:22'
+      - '50000:50000'
+      - '50022:50022'
+    volumes:
+      - ./jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - jenkins_network
+    environment:
+      - UID_JENKINS=1000
+      - GID_JENKINS=1000
+      - JENKINS_OPTS="--prefix=/jenkins"
+    restart: always
+
+networks:
+  jenkins_network:
