@@ -51,7 +51,7 @@ The version of `docker-ce` on the host can be found by issuing a `docker version
 	17.03.1~ce-0~debian-stretch
 	17.03.0~ce-0~debian-stretch
 	```
-	Versions are subject to change as time goes on and keeping this referencie up to date is outside of the scope of this document.
+	Versions are subject to change as time goes on and keeping this reference up to date is outside of the scope of this document.
 
 Once the value of `ARG docker_version=` has been set, the jenkins container can be built using `docker-compose` [[3](https://github.com/docker/compose/releases)].
 
@@ -69,7 +69,7 @@ jenkins.nginx.docker         lts                 3b61f3afc888        2 minutes a
 
 ## Configure
 
-This build makes use of docker-compse which is released as a seperate distribution from Docker.
+This build makes use of docker-compse which is released as a separate distribution from Docker.
 
 ### UID/GID
 
@@ -91,7 +91,7 @@ The new `docker-entrypoint.sh` script is prefixed to use Tini [[4](https://githu
 
 ### Mounted Volumes
 
-The user may also define mounte volumes for both the Nginx and Jenkins containers.
+The user may also define mount volumes for both the Nginx and Jenkins containers.
 
 Default settings for `nginx`:
 
