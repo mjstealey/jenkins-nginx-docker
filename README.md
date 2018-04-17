@@ -170,18 +170,18 @@ Since the `default.conf` file is mounted from the host it can be updated in real
 
 - Example validation:
 
-	```console
-	$ docker exec nginx /etc/init.d/nginx configtest
-	nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
-	nginx: configuration file /etc/nginx/nginx.conf test is successful
-	```
+    ```console
+    $ docker exec nginx /etc/init.d/nginx configtest
+    nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+    nginx: configuration file /etc/nginx/nginx.conf test is successful
+    ```
 
 - Example reload:
 
-	```console
-	$ docker exec nginx /etc/init.d/nginx reload
-	Reloading nginx: nginx.
-	```
+    ```console
+    $ docker exec nginx /etc/init.d/nginx reload
+    Reloading nginx: nginx.
+    ```
 
 
 ## References
