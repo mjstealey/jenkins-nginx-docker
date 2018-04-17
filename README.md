@@ -16,41 +16,44 @@ The version of `docker-ce` on the host can be found by issuing a `docker version
 
 - Example:
 
-	```
-	$ docker version
-	Client:
-	 Version:	17.12.0-ce
-	 API version:	1.35
-	 Go version:	go1.9.2
-	 Git commit:	c97c6d6
-	 Built:	Wed Dec 27 20:03:51 2017
-	 OS/Arch:	darwin/amd64
-	
-	Server:
-	 Engine:
-	  Version:	17.12.0-ce
-	  API version:	1.35 (minimum version 1.12)
-	  Go version:	go1.9.2
-	  Git commit:	c97c6d6
-	  Built:	Wed Dec 27 20:12:29 2017
-	  OS/Arch:	linux/amd64
-	  Experimental:	true
-	```
+    ```console
+    $ docker version
+    Client:
+     Version:	17.12.0-ce
+     API version:	1.35
+     Go version:	go1.9.2
+     Git commit:	c97c6d6
+     Built:	Wed Dec 27 20:03:51 2017
+     OS/Arch:	darwin/amd64
+    
+    Server:
+     Engine:
+      Version:	17.12.0-ce
+      API version:	1.35 (minimum version 1.12)
+      Go version:	go1.9.2
+      Git commit:	c97c6d6
+      Built:	Wed Dec 27 20:12:29 2017
+      OS/Arch:	linux/amd64
+      Experimental:	true
+    ```
 	In this example the version was found to be `17.12.0-ce`, so the value of `docker_version` in the [Dockerfile](Dockerfile) should be set to `17.12.0~ce-0~debian` prior to building the image.
 
-- Debian based versions of `docker-ce` available as of 2018-01-24:
+- Debian based versions of `docker-ce` available as of 2018-04-17:
 
-	```
-	17.12.0~ce-0~debian 
-	17.09.1~ce-0~debian
-	17.09.0~ce-0~debian
-	17.06.2~ce-0~debian
-	17.06.1~ce-0~debian
-	17.06.0~ce-0~debian
-	17.03.2~ce-0~debian-stretch
-	17.03.1~ce-0~debian-stretch
-	17.03.0~ce-0~debian-stretch
-	```
+    ```console
+    # apt-cache madison docker-ce | tr -s ' ' | cut -d '|' -f 2
+     18.03.0~ce-0~debian
+     17.12.1~ce-0~debian
+     17.12.0~ce-0~debian
+     17.09.1~ce-0~debian
+     17.09.0~ce-0~debian
+     17.06.2~ce-0~debian
+     17.06.1~ce-0~debian
+     17.06.0~ce-0~debian
+     17.03.2~ce-0~debian-stretch
+     17.03.1~ce-0~debian-stretch
+     17.03.0~ce-0~debian-stretch
+    ```
 	Versions are subject to change as time goes on and keeping this reference up to date is outside of the scope of this document.
 
 Once the value of `ARG docker_version=` has been set, the jenkins container can be built using `docker-compose` [[3](https://github.com/docker/compose/releases)].
@@ -61,7 +64,7 @@ docker-compose build
 
 The resulting image should look something like:
 
-```
+```console
 $ docker images
 REPOSITORY                   TAG                 IMAGE ID            CREATED             SIZE
 jenkins.nginx.docker         lts                 3b61f3afc888        2 minutes ago       1.26GB
@@ -95,7 +98,7 @@ The user may also define mount volumes for both the Nginx and Jenkins containers
 
 Default settings for `nginx`:
 
-```
+```yaml
 volumes:
   - ./nginx:/etc/nginx/conf.d
   - ./logs/nginx:/var/log/nginx
@@ -103,7 +106,7 @@ volumes:
 
 Default settings for `jenkins`:
 
-```
+```yaml
 volumes:
   - ./jenkins_home:/var/jenkins_home
   - /var/run/docker.sock:/var/run/docker.sock
@@ -125,7 +128,7 @@ docker-compose up -d
 
 A successful run will yield two new containers, `nginx` and `jenkins`.
 
-```
+```console
 $ docker ps
 CONTAINER ID        IMAGE                      COMMAND                  CREATED             STATUS              PORTS                                                                                NAMES
 3266e71ecb05        nginx:latest               "nginx -g 'daemon of…"   About an hour ago   Up About an hour    0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp                                             nginx
@@ -140,7 +143,7 @@ First run:
 
 To retrieve the `initialAdminPassword`:
 
-```
+```console
 $ docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 455341501512421c82f46f7d7bed27d0
 ```
@@ -152,7 +155,7 @@ From here continue to customize Jenkins to your particular requirements.
 
 ### Validate Docker from Jenkins
 
-```
+```console
 $ docker exec -u jenkins jenkins sudo docker ps
 CONTAINER ID        IMAGE                      COMMAND                  CREATED             STATUS              PORTS                                                                                NAMES
 3266e71ecb05        nginx:latest               "nginx -g 'daemon of…"   About an hour ago   Up About an hour    0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp                                             nginx
@@ -167,7 +170,7 @@ Since the `default.conf` file is mounted from the host it can be updated in real
 
 - Example validation:
 
-	```
+	```console
 	$ docker exec nginx /etc/init.d/nginx configtest
 	nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
 	nginx: configuration file /etc/nginx/nginx.conf test is successful
@@ -175,7 +178,7 @@ Since the `default.conf` file is mounted from the host it can be updated in real
 
 - Example reload:
 
-	```
+	```console
 	$ docker exec nginx /etc/init.d/nginx reload
 	Reloading nginx: nginx.
 	```
