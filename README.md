@@ -38,22 +38,27 @@ The version of `docker-ce` on the host can be found by issuing a `docker version
     ```
 	In this example the version was found to be `17.12.0-ce`, so the value of `docker_version` in the [Dockerfile](Dockerfile) should be set to `17.12.0~ce-0~debian` prior to building the image.
 
-- Debian based versions of `docker-ce` available as of 2018-04-17:
+- Debian based versions of `docker-ce` available as of 2018-09-21:
 
-    ```console
-    # apt-cache madison docker-ce | tr -s ' ' | cut -d '|' -f 2
-     18.03.0~ce-0~debian
-     17.12.1~ce-0~debian
-     17.12.0~ce-0~debian
-     17.09.1~ce-0~debian
-     17.09.0~ce-0~debian
-     17.06.2~ce-0~debian
-     17.06.1~ce-0~debian
-     17.06.0~ce-0~debian
-     17.03.2~ce-0~debian-stretch
-     17.03.1~ce-0~debian-stretch
-     17.03.0~ce-0~debian-stretch
-    ```
+	```console
+	# apt-cache madison docker-ce | tr -s ' ' | cut -d '|' -f 2
+	 18.06.1~ce~3-0~debian
+	 18.06.0~ce~3-0~debian
+	 18.03.1~ce-0~debian
+	 18.03.0~ce-0~debian
+	 17.12.1~ce-0~debian
+	 17.12.0~ce-0~debian
+	 17.09.1~ce-0~debian
+	 17.09.0~ce-0~debian
+	 17.06.2~ce-0~debian
+	 17.06.1~ce-0~debian
+	 17.06.0~ce-0~debian
+	 17.03.3~ce-0~debian-stretch
+	 17.03.2~ce-0~debian-stretch
+	 17.03.1~ce-0~debian-stretch
+	 17.03.0~ce-0~debian-stretch
+	 ```
+ 
 	Versions are subject to change as time goes on and keeping this reference up to date is outside of the scope of this document.
 
 Once the value of `ARG docker_version=` has been set, the jenkins container can be built using `docker-compose` [[3](https://github.com/docker/compose/releases)].
