@@ -6,8 +6,13 @@ if [[ ${UID_JENKINS} != 1000 ]]; then
     echo "INFO: set jenkins UID to ${UID_JENKINS}"
     usermod -u ${UID_JENKINS} jenkins
     # update ownership of directories
-    chown -R jenkins /var/jenkins_home
-    chown -R jenkins /usr/share/jenkins/ref
+    {
+      chown -R jenkins:jenkins /var/jenkins_home
+      chown -R jenkins:jenkins /usr/share/jenkins/ref
+    } ||
+    {
+      echo "ERROR: failed chown command"
+    }
 fi
 
 # update jenkins GID
