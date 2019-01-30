@@ -1,4 +1,5 @@
 jenkins_home/
 logs/
+certs/
 .DS_Store
 .idea

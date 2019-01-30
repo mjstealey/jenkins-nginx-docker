@@ -1,5 +1,10 @@
 # Jenkins LTS - Nginx - Docker
 
+**What is Jenkins?**
+
+- Jenkins offers a simple way to set up a continuous integration or continuous delivery environment for almost any combination of languages and source code repositories using pipelines, as well as automating other routine development tasks. While Jenkins doesn’t eliminate the need to create scripts for individual steps, it does give you a faster and more robust way to integrate your entire chain of build, test, and deployment tools than you can easily build yourself.
+
+
 This work is based on the Official Jenkins Docker Image [[1](https://github.com/jenkinsci/docker)].
 
 Docker doesn't recommend running the Docker daemon inside a container (except for very few use cases like developing Docker itself), and the solutions to make this happen are generally hacky and/or unreliable.
@@ -8,7 +13,37 @@ Fear not though, there is an easy workaround: mount the host machine's Docker so
 
 Your container still needs compatible Docker client binaries in it, but I have found this to be acceptable for all my use cases. [[2](https://getintodevops.com/blog/the-simple-way-to-run-docker-in-docker-for-ci)]
 
-## Build
+## Table of Contents
+
+- [Setup and configuration](#setup) - customize for version of Docker being run
+- [HTTP or HTTPS?](#http-or-https) - which protocol to use for your instance
+- [SSL Certificates](#ssl-certs) - configure for using SSL certificates
+- [.env](#dot-env) - variable declaration for docker-compose to use
+- [Deploy](#deploy) - deploying your Jenkins site
+- [Running site](#site) - what to expect after you deploy
+- [Trouble Shooting](#debugging) - debugging common issues
+
+## <a name="setup"></a>Configuration
+
+### Create directories on host
+
+Directories are created on the host and volume mounted to the docker containers. This allows the user to persist data beyond the scope of the container itself. If volumes are not persisted to the host the user runs the risk of losing their data when the container is updated or removed.
+
+- **jenkins_home**: The Jenkins application and job files
+- **logs/nginx**: The Nginx log files (error.log, access.log)
+- **certs**: SSL certificate files
+
+From the top level of the cloned repository, create the directories that will be used for managing the data on the host.
+
+```
+mkdir -p jenkins_home/ logs/nginx/ certs/
+```
+
+**NOTE**: for permissions reasons it is important for the user to create these directories prior to issuing the docker-compose command. If the directories do not already exist when the containers are started, the directories will be created at start time and will be owned by the root user of the container process. This can lead to access denied permission issues.
+
+### Docker version
+
+The version of Docker being run inside the container should be the same as the host it is being deployed as to mitigate against unforseen issues.
 
 In the [Dockerfile](Dockerfile), set the value of `ARG docker_version=` to correspond to the same version of `docker-ce` that is running on the host. The default value is `17.12.0~ce-0~debian`.
 
@@ -75,57 +110,127 @@ REPOSITORY                   TAG                 IMAGE ID            CREATED    
 jenkins.nginx.docker         lts                 3b61f3afc888        2 minutes ago       1.26GB
 ```
 
-## Configure
-
-This build makes use of docker-compse which is released as a separate distribution from Docker.
-
 ### UID/GID
 
-An option has been added to allow the user to modify the UID and GID of the `jenkins` user that runs within the container. This can be useful to allow the mounting of volumes to the container and maintain UID/GID combinations that are native to the host.
+The UID and GID of the `jenkins` user that runs within the container are modifiable to allow the mounting of host volumes to the container to match that of a user on the host.
 
-- Example from `docker-compose.yml`:
+From `.env`
 
-	```yaml
-	environment:
-	  - UID_JENKINS=1000
-	  - GID_JENKINS=1000
-	```
+```env
+# jenkins - jenkins.nginx.docker:lts
+UID_JENKINS=1000
+GID_JENKINS=1000
+...
+```
 
-The official Jenkins Docker image creates a user named `jenkins` with `UID/GID` = `1000/1000`. This is not always an ideal UID/GID pairing when wanting to use mounted volumes, so the notion of changing the UID/GID of the jenkins user has been introduced.
+The Jenkins Docker image creates a user named `jenkins` with `UID/GID` = `1000/1000`. This is not always an ideal UID/GID pairing when wanting to use mounted volumes, so the notion of changing the UID/GID of the jenkins user exists.
 
 In order to facilitate this the `root` user must issue some commands at start up, and thus a new `docker-entrypoint.sh` script has been introduced. This new script then calls the original `jenkins.sh` script as the `jenkins` user on it's way out.
 
 The new `docker-entrypoint.sh` script is prefixed to use Tini [[4](https://github.com/krallin/tini/issues/8)] as was the case for the `jenkins.sh` script from the original image.
 
-### Mounted Volumes
+## <a name="http-or-https"></a>HTTP or HTTPS?
 
-The user may also define mount volumes for both the Nginx and Jenkins containers.
+There are three files in the `nginx` directory, and which one you use depends on whether you want to serve your site using HTTP or HTTPS.
 
-Default settings for `nginx`:
+Files in the `nginx` directory:
 
-```yaml
-volumes:
-  - ./nginx:/etc/nginx/conf.d
-  - ./logs/nginx:/var/log/nginx
+- `default.conf` - Example configuration for running locally on port 80 using http.
+- `default_http.conf.template` - Example configuration for running at a user defined `FQDN_OR_IP` on port 80 using http.
+- `default_https.conf.template` - Example configuration for running at a user defined `FQDN_OR_IP` on port 443 using https.
+
+**NOTE**: `FQDN_OR_IP` is short for Fully Qualified Domain Name or IP Address, and should be DNS resolvable if using a hostname.
+
+Both of these are protocols for transferring the information of a particular website between the Web Server and Web Browser. But what’s difference between these two? Well, extra "s" is present in https and that makes it secure! 
+
+A very short and concise difference between http and https is that https is much more secure compared to http. https = http + cryptographic protocols.
+
+Main differences between HTTP and HTTPS
+
+- In HTTP, URL begins with [http://]() whereas an HTTPS URL starts with [https://]()
+- HTTP uses port number `80` for communication and HTTPS uses `443`
+- HTTP is considered to be unsecured and HTTPS is secure
+- HTTP Works at Application Layer and HTTPS works at Transport Layer
+- In HTTP, Encryption is absent whereas Encryption is present in HTTPS
+- HTTP does not require any certificates and HTTPS needs SSL Certificates (signed, unsigned or self generated)
+
+### HTTP
+
+If you plan to run your Jenkins site over http on port 80, then do the following.
+
+1. Replace the contents of `nginx/default.conf` with the `nginx/default_http.conf.template` file 
+2. Update the `FQDN_OR_IP` in `nginx/default.conf` to be that of your domain
+
+### HTTPS
+
+If you plan to run your WordPress site over https on port 443, then do the following.
+
+1. Replace the contents of `nginx/default.conf` with the `nginx/default_https.conf.template` file. 
+2. Update the `FQDN_OR_IP` in `nginx/default.conf` to be that of your domain (occurs in many places)
+3. Review the options for SSL certificates below to complete your configuration
+
+## <a name="ssl-certs"></a>SSL Certificates
+
+**What are SSL Certificates?**
+
+SSL Certificates are small data files that digitally bind a cryptographic key to an organization’s details. When installed on a web server, it activates the padlock and the https protocol and allows secure connections from a web server to a browser. Typically, SSL is used to secure credit card transactions, data transfer and logins, and more recently is becoming the norm when securing browsing of social media sites.
+
+SSL Certificates bind together:
+
+- A domain name, server name or hostname.
+- An organizational identity (i.e. company name) and location.
+
+### Example using self signed certificates 
+
+Generate your certificates (example using `.pem` format)
+
+```
+cd certs
+openssl req -x509 \
+  -newkey rsa:4096 \
+  -keyout self_signed_key.pem \
+  -out self_signed_cert.pem \
+  -days 365 \
+  -nodes -subj '/CN='$(hostname)
 ```
 
-Default settings for `jenkins`:
+Uncomment the `NGINX_SSL_CERT` and `NGINX_SSL_KEY ` lines in the `docker-compose.yml` file
 
 ```yaml
-volumes:
-  - ./jenkins_home:/var/jenkins_home
-  - /var/run/docker.sock:/var/run/docker.sock
+...
+    volumes:
+      - ${NGINX_DEFAULT_CONF:-./nginx/default.con}:/etc/nginx/conf.d/default.conf
+      - ./logs/nginx:/var/log/nginx
+      - ${NGINX_SSL_CERT:-./certs/self_signed_cert.pem}:/etc/nginx/ssl/server.crt
+      - ${NGINX_SSL_KEY:-./certs/self_signed_key.pem}:/etc/nginx/ssl/server.key/
+...
 ```
 
-### Nginx
+**NOTE**: the `NGINX_SSL_CERT ` and `NGINX_SSL_KEY ` values may need to be adjusted in the `.env` file to match your deployment
 
-The `nginx/default.conf` file is used to determine the behavior of the Nginx reverse proxy web server [[5](https://wiki.jenkins.io/display/JENKINS/Jenkins+behind+an+NGinX+reverse+proxy)], and should be modified to fit the use case. Template files for both http and https have been included as examples.
+## <a name="dot-env"></a>.env
 
-Update `FQDN_OR_IP` to be the fully qualified domain name or IP address of the host.
+A `.env` file has been included to more easily set docker-compose variables without having to modify the `docker-compose.yml` file itself.
 
-## Run
+Default values have been provided as a means of getting up and running quickly for testing purposes. It is up to the user to modify these to best suit their deployment preferences.
 
-Use docker-compose to run the containers. Generally this is done using the `-d` flag to daemonize the processes.
+Example .env file:
+
+```
+# jenkins - jenkins.nginx.docker:lts
+UID_JENKINS=1000
+GID_JENKINS=1000
+JENKINS_OPTS="--prefix=/jenkins"
+
+# nginx - nginx:latest
+NGINX_DEFAULT_CONF=./nginx/default.conf
+NGINX_SSL_CERT=./certs/self_signed_cert.pem
+NGINX_SSL_KEY=./certs/self_signed_key.pem
+```
+
+## <a name="deploy"></a>Deploy
+
+Use docker-compose from the top level of the repository to run the containers. Generally this is done using the `-d` flag to daemonize the processes.
 
 ```
 docker-compose up -d
@@ -140,7 +245,12 @@ CONTAINER ID        IMAGE                      COMMAND                  CREATED 
 0970db06246b        jenkins.nginx.docker:lts   "/sbin/tini -- /dock…"   About an hour ago   Up About an hour    0.0.0.0:50000->50000/tcp, 8080/tcp, 0.0.0.0:50022->50022/tcp, 0.0.0.0:2022->22/tcp   jenkins
 ```
 
-Using the configuration provided in the repository you should now have a running instance of Jenkins at [http://localhost/jenkins](http://localhost/jenkins)
+It may take a few minutes for the Jenkins container to complete it's initial setup, but once completed you should find your running site at:
+
+- HTTP: [http://FQDN\_OR\_IP/jenkins]()
+- HTTPS: [https://FQDN\_OR\_IP/jenkins]()
+
+## <a name="site"></a>Running site
 
 First run:
 
@@ -160,14 +270,16 @@ From here continue to customize Jenkins to your particular requirements.
 
 ### Validate Docker from Jenkins
 
+Issue a docker command from the Jenkins container to the host. For example, running `docker ps` from inside of the Jenkins container should result in something like:
+
 ```console
 $ docker exec -u jenkins jenkins sudo docker ps
 CONTAINER ID        IMAGE                      COMMAND                  CREATED             STATUS              PORTS                                                                                NAMES
-3266e71ecb05        nginx:latest               "nginx -g 'daemon of…"   About an hour ago   Up About an hour    0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp                                             nginx
-0970db06246b        jenkins.nginx.docker:lts   "/sbin/tini -- /dock…"   About an hour ago   Up About an hour    0.0.0.0:50000->50000/tcp, 8080/tcp, 0.0.0.0:50022->50022/tcp, 0.0.0.0:2022->22/tcp   jenkins
+771a9c9fde17        jenkins.nginx.docker:lts   "/sbin/tini -- /dock…"   11 minutes ago      Up 11 minutes       0.0.0.0:50000->50000/tcp, 8080/tcp, 0.0.0.0:50022->50022/tcp, 0.0.0.0:2022->22/tcp   jenkins
+d68e3b96071e        nginx:latest               "nginx -g 'daemon of…"   11 minutes ago      Up 11 minutes       0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp                                             nginx
 ```
 
-## Trouble Shooting
+## <a name="debugging"></a>Trouble Shooting
 
 ### Nginx configuration
 
@@ -175,18 +287,18 @@ Since the `default.conf` file is mounted from the host it can be updated in real
 
 - Example validation:
 
-    ```console
-    $ docker exec nginx /etc/init.d/nginx configtest
-    nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
-    nginx: configuration file /etc/nginx/nginx.conf test is successful
-    ```
+  ```console
+  $ docker exec nginx /usr/sbin/nginx -t
+  nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+  nginx: configuration file /etc/nginx/nginx.conf test is successful
+  ```
 
 - Example reload:
 
-    ```console
-    $ docker exec nginx /etc/init.d/nginx reload
-    Reloading nginx: nginx.
-    ```
+  ```console
+  $ docker exec nginx /usr/sbin/nginx -s reload
+  Reloading nginx: nginx.
+  ```
 
 
 ## References
