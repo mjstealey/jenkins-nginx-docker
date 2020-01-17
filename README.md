@@ -73,12 +73,17 @@ The version of `docker-ce` on the host can be found by issuing a `docker version
     ```
 	In this example the version was found to be `17.12.0-ce`, so the value of `docker_version` in the [Dockerfile](Dockerfile) should be set to `17.12.0~ce-0~debian` prior to building the image.
 
-- Debian based versions of `docker-ce` available as of 2019-07-30:
+- Debian based versions of `docker-ce` available as of 2020-01-17:
 
   ```console
   # apt-cache madison docker-ce | tr -s ' ' | cut -d '|' -f 2
+   5:19.03.5~3-0~debian-stretch
+   5:19.03.4~3-0~debian-stretch
+   5:19.03.3~3-0~debian-stretch
+   5:19.03.2~3-0~debian-stretch
    5:19.03.1~3-0~debian-stretch
    5:19.03.0~3-0~debian-stretch
+   5:18.09.9~3-0~debian-stretch
    5:18.09.8~3-0~debian-stretch
    5:18.09.7~3-0~debian-stretch
    5:18.09.6~3-0~debian-stretch
