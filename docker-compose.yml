@@ -1,4 +1,4 @@
-version: '3.6'
+version: '3.8'
 services:
 
   jenkins:
@@ -12,23 +12,22 @@ services:
       - '50000:50000'
       - '50022:50022'
     volumes:
-      - ./jenkins_home:/var/jenkins_home
+      - ${JENKINS_HOME:-./jenkins_home}:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - UID_JENKINS=${UID_JENKINS:-1000}
       - GID_JENKINS=${GID_JENKINS:-1000}
-      - JENKINS_OPTS=${JENKINS_OPTS:-"--prefix=/jenkins"}
+      #- JENKINS_OPTS=${JENKINS_OPTS:-"--prefix=/jenkins"}
     restart: always
 
   nginx:
     image: nginx:latest
     container_name: nginx
     ports:
-      - '80:80'
-      - '443:443'
+      - '8080:80'
+      #- '8443:443'
     volumes:
-      - ${NGINX_DEFAULT_CONF:-./nginx/default.con}:/etc/nginx/conf.d/default.conf
-      - ./logs/nginx:/var/log/nginx
-#      - ${NGINX_SSL_CERT:-./certs/self_signed_cert.pem}:/etc/nginx/ssl/server.crt # uncomment for SSL
-#      - ${NGINX_SSL_KEY:-./certs/self_signed_key.pem}:/etc/nginx/ssl/server.key   # uncomment for SSL
+      - ${NGINX_DEFAULT_CONF:-./nginx/default.conf}:/etc/nginx/conf.d/default.conf
+      - ${NGINX_LOGS:-./logs/nginx/jenkins}:/var/log/nginx/jenkins
+      #- ${NGINX_SSL:-./ssl}:/etc/ssl:ro
     restart: always
