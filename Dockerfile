@@ -14,9 +14,9 @@ ENV GID_JENKINS=1000
 
 # add ability to run docker from within jenkins (docker in docker)
 USER root
-RUN apt-get update && apt-get -y install \
+RUN sudo yum update && sudo yum -y install \
     sudo \
-    apt-transport-https \
+    yum-transport-https \
     ca-certificates \
     curl \
     gnupg \
@@ -29,7 +29,7 @@ RUN apt-get update && apt-get -y install \
     $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 FROM base as build-version-latest
-RUN apt-get update && apt-get -y install \
+RUN sudo yum update && yum  -y install \
     docker-ce \
     docker-ce-cli \
     containerd.io
@@ -37,7 +37,7 @@ RUN apt-get update && apt-get -y install \
 FROM base as build-version-custom
 # set docker version (match the host version) and set java opts
 ARG CUSTOM_VERSION
-RUN apt-get update && apt-get -y install \
+RUN sudo yum update && yum -y install \
     docker-ce=${CUSTOM_VERSION} \
     docker-ce-cli=${CUSTOM_VERSION} \
     containerd.io
