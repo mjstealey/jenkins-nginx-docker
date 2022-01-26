@@ -1,4 +1,12 @@
-jenkins_home/
-logs/
+# environment file
+.env
+
+# jenkins files
+jenkins_home
+
+# logging output
+logs
+
+# macOS and IDE
 .DS_Store
 .idea
