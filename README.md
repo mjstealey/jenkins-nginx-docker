@@ -14,7 +14,7 @@ Notes on [Jenkins LTS](https://www.jenkins.io/download/lts/#ji-toolbar) as a doc
     - [Host Requirements](#reqts)
 - [Configuration](#config)
 - [Deploy](#deploy)
-- [GitHub integration](#github) (TODO)
+- [GitHub OAuth integration](#github)
 - [Teardown](#teardown)
 - [References](#references)
 - [Notes](#notes)
@@ -222,13 +222,83 @@ Confirm the URL and start using Jenkins
 ![](./imgs/jenkins-is-ready.png)
 ![](./imgs/jenkins-landing-page.png)
 
-## <a name="github"></a>GitHub integration
+## <a name="github"></a>GitHub OAuth integration
 
-TODO
+**GOAL**: Use GitHub to authenticate user access into Jenkins and authorize actions within it
 
-Ref: [https://plugins.jenkins.io/github-oauth/](https://plugins.jenkins.io/github-oauth/)
+- Authorization is delegated using **Matrix-based security** by `organization` or `organization*repo` represented as **Group** membership at the user level
+- Do **NOT** log off the initial Administrator account prior to establishing a new Administrative User or Group that is accessible to an authorized GitHub user
+    - Once the **GitHub Authentication Plugin** is activated you will lose the standard login option of Username/Password
+    - After installing, the `<securityRealm>` class should have been updated in your `/var/lib/jenkins/config.xml` file. The value of `<clientID>` should agree with what you pasted into the admin UI. If it doesn't or you still can't log in, reset to `<securityRealm class="hudson.security.HudsonPrivateSecurityRealm">` and restart Jenkins from the command-line.
 
-## <a name="teardonw"></a>Teardown
+### Install the GitHub OAuth Plugin
+
+- From Plugin Manager search for [GitHub Authentication](https://plugins.jenkins.io/github-oauth/)
+- Download and install after restart
+
+### Setup
+
+Before configuring the plugin you must create a GitHub application registration.
+
+1. Visit [https://github.com/settings/applications/new](https://github.com/settings/applications/new) to create a GitHub application registration.
+2. The values for application name, homepage URL, or application description don't matter. They can be customized however desired.
+3. However, the authorization callback URL takes a specific value. It must be `https://jenkins.example.com/securityRealm/finishLogin` where jenkins.example.com is the location of the Jenkins server.
+The important part of the callback URL is `/securityRealm/finishLogin`
+4. Finish by clicking Register application.
+
+The `Client ID` and the `Client Secret` will be used to configure the Jenkins Security Realm. Keep the page open to the application registration so this information can be copied to your Jenkins configuration.
+
+### Security Realm in Global Security
+
+The security realm in Jenkins controls authentication (i.e. you are who you say you are). The GitHub Authentication Plugin provides a security realm to authenticate Jenkins users via GitHub OAuth.
+
+1. In the Global Security configuration choose the Security Realm to be **GitHub Authentication Plugin**.
+2. The settings to configure are: GitHub Web URI, GitHub API URI, Client ID, Client Secret, and OAuth Scope(s).
+3. If you're using GitHub Enterprise then the API URI is [https://ghe.example.com/api/v3]().
+The GitHub Enterprise API URI ends with `/api/v3`.
+4. The recommended minimum GitHub OAuth scopes are `read:org,user:email`.
+The recommended scopes are designed for using both authentication and authorization functions in the plugin. If only authentication is being used then the scope can be further limited to `(no scope)` or `user:email`.
+
+In the plugin configuration pages each field has a little (**?**) next to it. Click on it for help about the setting.
+
+![](./imgs/jenkins-github-oauth.png)
+
+### Authorization in Global Security.
+
+The authorization configuration in Jenkins controls what your users can do (i.e. read jobs, execute builds, administer permissions, etc.). The GitHub OAuth Plugin supports multiple ways of configuring authorization.
+
+It is highly recommended that you configure the security realm and log in via GitHub OAuth before configuring authorization. This way Jenkins can look up and verify users and groups if configuring matrix-based authorization.
+
+### Matrix-based Authorization strategy
+
+Control user authorization using **Matrix-based security** or **Project-based Matrix Authorization Strategy**. Project-based Matrix Authorization Strategy allows one to configure authorization globally per project and, when using Project-based Matrix Authorization Strategy with the CloudBees folder plugin, per folder.
+
+There are a few built-in authorizations to consider.
+
+- `anonymous` - is anyone who has not logged in. Recommended permissions are just `Job/Discover` and `Job/ViewStatus`.
+- `authenticated` - is anyone who has logged in. You can configure permissions for anybody who has logged into Jenkins. Recommended permissions are `Overall/Read` and `View/Read`.
+`anonymous` and `authenticated` usernames are case sensitive and must be lower case. This is a consideration when configuring authorizations via Groovy. Keep in mind that anonymous shows up as Anonymous in the Jenkins UI.
+
+You can configure authorization based on GitHub users, organizations, or teams.
+
+- `username` - give permissions to a specific GitHub username.
+- `organization` - give permissions to every user that belongs to a specific GitHub organization.
+- `organization*team` - give permissions to a specific GitHub team of a GitHub organization. Notice that organization and team are separated by an asterisk (*).
+
+![](./imgs/jenkins-authorization-matrix.png)
+
+Related to the screenshot above:
+
+- User: `Michael J. Stealey` is an Administrative user that authenticated using the GitHub OAuth Plugin
+- User: `Jenkins Admin` is the original admin account but is no longer reachable using the GitHub OAuth Plugin
+- Group: `RENCI-NRIG` is a GitHub Organization reflected as a Group for any users who belong to that organization and is being used to set **Job** based authorizations within Jenkins
+
+**Reference**: 
+
+- Documentation: [https://plugins.jenkins.io/github-oauth/](https://plugins.jenkins.io/github-oauth/)
+- GitHub: [https://github.com/jenkinsci/github-oauth-plugin](https://github.com/jenkinsci/github-oauth-plugin)
+
+## <a name="teardown"></a>Teardown
 
 For a complete teardown all containers must be stopped and removed along with the volumes and network that were created for the application containers
 
