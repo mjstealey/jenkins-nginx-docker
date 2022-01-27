@@ -1,536 +1,419 @@
-# Jenkins LTS - Nginx - Docker-in-Docker
+# Jenkins LTS - Docker
 
-**What is Jenkins?**
+Notes on [Jenkins LTS](https://www.jenkins.io/download/lts/#ji-toolbar) as a docker deployment orchestrated by Docker Compose. (version denoted at the time of writing this document)
 
-- Jenkins offers a simple way to set up a continuous integration or continuous delivery environment for almost any combination of languages and source code repositories using pipelines, as well as automating other routine development tasks. While Jenkins doesn’t eliminate the need to create scripts for individual steps, it does give you a faster and more robust way to integrate your entire chain of build, test, and deployment tools than you can easily build yourself.
+- Use the LTS version of Jenkins (v2.319.2)
+- Use Nginx as the web server (v1)
+- Include self-signed SSL certificate (Let's Encrypt localhost format)
 
+**DISCLAIMER: The code herein may not be up to date nor compliant with the most recent package and/or security notices. The frequency at which this code is reviewed and updated is based solely on the lifecycle of the project for which it was written to support, and is not actively maintained outside of that scope. Use at your own risk.**
 
-This work is based on the Official Jenkins Docker Image (**jenkins/jenkins:lts**) [[1](https://github.com/jenkinsci/docker)].
+## Table of contents
 
-Docker doesn't recommend running the Docker daemon inside a container (except for very few use cases like developing Docker itself), and the solutions to make this happen are generally hacky and/or unreliable.
-
-Fear not though, there is an easy workaround: mount the host machine's Docker socket in the container. This will allow your container to use the host machine's Docker daemon to run containers and build images.
-
-Your container still needs compatible Docker client binaries in it, but I have found this to be acceptable for all my use cases. [[2](https://getintodevops.com/blog/the-simple-way-to-run-docker-in-docker-for-ci)]
-
-## Table of Contents
-
-- [Prerequisites](#prereq)
+- [Overview](#overview)
+    - [Host Requirements](#reqts)
 - [Configuration](#config)
-- [Build the Jenkins image](#build)
-- [Basic Deployment using http](#http)
-- [Basic Deployment using https and SSL](#https)
-- [Custom Deployment using https with SSL and URL-slug /jenkins](#custom)
-- [SSL Certificates](#ssl-certs)
-- [Docker in Docker test](#dind)
-- [Trouble Shooting](#debugging) - debugging common issues
-- [References](#ref)
+- [Deploy](#deploy)
+- [GitHub OAuth integration](#github)
+- [Teardown](#teardown)
+- [References](#references)
+- [Notes](#notes)
 
-## <a name="prereq"></a>Prerequisites
+## <a name="overview"></a>Overview
 
-### Docker and Compose
-
-This project makes use of both Docker and Docker Compose and it is left to the user to have these installed properly on their system ahead of time.
-
-### Create directories on host
-
-In order to persist data the user should create directories on the host to be volume mounted to the docker containers. This allows the user to persist data beyond the scope of the container itself. If volumes are not persisted to the host the user runs the risk of losing their data when the container is updated or removed.
-
-- **jenkins_home**: The Jenkins application and job files
-- **logs/nginx**: The Nginx log files (error.log, access.log)
+Jenkins offers a simple way to set up a continuous integration or continuous delivery environment for almost any combination of languages and source code repositories using pipelines, as well as automating other routine development tasks. While Jenkins doesn’t eliminate the need to create scripts for individual steps, it does give you a faster and more robust way to integrate your entire chain of build, test, and deployment tools than you can easily build yourself.
 
 
-These directories can be located anywhere on the host that is reachable by the docker-compose script, and will be placed at the top level of the repository for this example.
+- This work is based on the **Official Jenkins LTS Docker Image** [jenkins/jenkins:lts-jdk11](https://github.com/jenkinsci/docker)
+- Installs some prerequisites, configures the official Docker apt repositories and installs the latest **Docker CE** binaries
+- Mount the host machine's **Docker socket** in the container (This will allow your container to use the host machine's Docker daemon to run containers and build images).
 
-```console
-mkdir -p jenkins_home/ logs/nginx/
-```
+### <a name="reqts"></a>Host requirements
 
-**NOTE**: for permissions reasons it is important for the user to create these directories prior to issuing the docker-compose command. If the directories do not already exist when the containers are started, the directories will be created at start time and will be owned by the **root** user of the container process. This can lead to access denied permission issues at runtime.
+Both Docker and Docker Compose are required on the host to run this code
 
-### Docker version
-
-The version of Docker being run inside the container should be the same as the host it is being deployed on to mitigate against unforeseen issues.
-
-The version can be set by adjusting the [Dockerfile](Dockerfile) value for `ARG BUILDER_TAG=` to be either `latest` (default) or `custom`.
-
-If using `custom` be sure to set the value of `CUSTOM_VERSION=` to correspond to the same version of `docker-ce` that is running on the host. The default value is `5:20.10.5~3-0~debian-buster`.
-
-The version of `docker-ce` on the host can be found by issuing a `docker version` call.
-
-- Example:
-
-    ```console
-    $ docker version
-    Client: Docker Engine - Community
-     Cloud integration: 1.0.9
-     Version:           20.10.5
-     API version:       1.41
-     Go version:        go1.13.15
-     Git commit:        55c4c88
-     Built:             Tue Mar  2 20:13:00 2021
-     OS/Arch:           darwin/amd64
-     Context:           default
-     Experimental:      true
-    
-    Server: Docker Engine - Community
-     Engine:
-      Version:          20.10.5
-      API version:      1.41 (minimum version 1.12)
-      Go version:       go1.13.15
-      Git commit:       363e9a8
-      Built:            Tue Mar  2 20:15:47 2021
-      OS/Arch:          linux/amd64
-      Experimental:     true
-     containerd:
-      Version:          1.4.3
-      GitCommit:        269548fa27e0089a8b8278fc4fc781d7f65a939b
-     runc:
-      Version:          1.0.0-rc92
-      GitCommit:        ff819c7e9184c13b7c2607fe6c30ae19403a7aff
-     docker-init:
-      Version:          0.19.0
-      GitCommit:        de40ad0
-    ```
-    
-    In this example the version was found to be `20.10.5`, so the value of `docker_version` in the [Dockerfile](Dockerfile) should be set to `5:20.10.5~3-0~debian-buster` prior to building the image.
-
-- Debian:buster based versions of `docker-ce` available as of 2021-04-01:
-
-    ```console
-    # apt-cache madison docker-ce | tr -s ' ' | cut -d '|' -f 2
-     5:20.10.5~3-0~debian-buster
-     5:20.10.4~3-0~debian-buster
-     5:20.10.3~3-0~debian-buster
-     5:20.10.2~3-0~debian-buster
-     5:20.10.1~3-0~debian-buster
-     5:20.10.0~3-0~debian-buster
-     5:19.03.15~3-0~debian-buster
-     5:19.03.14~3-0~debian-buster
-     5:19.03.13~3-0~debian-buster
-     5:19.03.12~3-0~debian-buster
-     5:19.03.11~3-0~debian-buster
-     5:19.03.10~3-0~debian-buster
-     5:19.03.9~3-0~debian-buster
-     5:19.03.8~3-0~debian-buster
-     5:19.03.7~3-0~debian-buster
-     5:19.03.6~3-0~debian-buster
-     5:19.03.5~3-0~debian-buster
-     5:19.03.4~3-0~debian-buster
-     5:19.03.3~3-0~debian-buster
-     5:19.03.2~3-0~debian-buster
-     5:19.03.1~3-0~debian-buster
-     5:19.03.0~3-0~debian-buster
-     5:18.09.9~3-0~debian-buster
-     5:18.09.8~3-0~debian-buster
-     5:18.09.7~3-0~debian-buster
-     5:18.09.6~3-0~debian-buster
-     5:18.09.5~3-0~debian-buster
-     5:18.09.4~3-0~debian-buster
-     5:18.09.3~3-0~debian-buster
-     5:18.09.2~3-0~debian-buster
-     5:18.09.1~3-0~debian-buster
-     5:18.09.0~3-0~debian-buster
-    ```
- 
-  Versions are subject to change as time goes on and keeping this reference up to date is outside of the scope of this document.
-
-
-### UID/GID
-
-The UID and GID of the `jenkins` user that runs within the container are modifiable to allow the mounting of host volumes to the container to match that of a user on the host.
-
-The Jenkins Docker image creates a user named `jenkins` with `UID/GID` = `1000/1000`. This is not always an ideal UID/GID pairing when wanting to use mounted volumes, so the notion of changing the UID/GID of the jenkins user exists.
-
-In order to facilitate this the `root` user must issue some commands at start up, and thus a new `docker-entrypoint.sh` script has been introduced. This new script then calls the original `jenkins.sh` script as the `jenkins` user on it's way out.
-
-The new `docker-entrypoint.sh` script is prefixed to use Tini [[4](https://github.com/krallin/tini/issues/8)] as was the case for the `jenkins.sh` script from the original image.
+- Install Docker Engine: [https://docs.docker.com/engine/install/](https://docs.docker.com/engine/install/)
+- Install Docker Compose: [https://docs.docker.com/compose/install/](https://docs.docker.com/compose/install/)
 
 ## <a name="config"></a>Configuration
 
-### .env
+Copy the `env.template` file as `.env` and populate according to your environment
 
-For convenience a `.env` file has been included for setting certain environment variables. These can be adjusted to suit your specific environment, and have the following default values.
+```ini
+# docker-compose environment file
+#
+# When you set the same environment variable in multiple files,
+# here’s the priority used by Compose to choose which value to use:
+#
+#  1. Compose file
+#  2. Shell environment variables
+#  3. Environment file
+#  4. Dockerfile
+#  5. Variable is not defined
 
-```env
-# jenkins - jenkins.nginx.docker:lts
-UID_JENKINS=1000
-GID_JENKINS=1000
-JENKINS_HOME=./jenkins_home             # <-- same as directory created above
-JENKINS_OPTS="--prefix=/jenkins"
+# Jenkins Settings
+export JENKINS_LOCAL_HOME=./jenkins_home
+export JENKINS_UID=1000
+export JENKINS_GID=1000
+export HOST_DOCKER_SOCK=/var/run/docker.sock
 
-# nginx - nginx:latest
-NGINX_DEFAULT_CONF=./nginx/default.conf
-NGINX_LOGS=./logs/nginx/jenkins         # <-- same as directory created above
-NGINX_SSL=./ssl                         # <-- location of SSL certs on host
+# Nginx Settings
+export NGINX_CONF=./nginx/default.conf
+export NGINX_SSL_CERTS=./ssl
+export NGINX_LOGS=./logs/nginx
+
+# User Settings
+# TBD
 ```
 
-### Nginx
+Modify `nginx/default.conf` and replace `$host:8443` with your server domain name and port throughout the file
 
-There are three files in the `nginx` directory, and which one you use depends on whether you want to serve your site using HTTP or HTTPS.
-
-Files in the `nginx` directory:
-
-- `default.conf` - Configuration for running locally at 127.0.0.1 on port 8080 using http
-- `default.conf.http_template` - Configuration template for running locally at 127.0.0.1 on port 8080 using http
-- `default.conf.https_template` - Configuration template for running locally at 127.0.0.1 on port 8443 using https and SSL
-
-
-```nginx
-upstream jenkins_app {
-  keepalive 32; # keepalive connections
-  server jenkins:8080; # jenkins ip and port
+```conf
+upstream jenkins {
+    keepalive 32;              # keepalive connections
+    server cicd-jenkins:8080;  # jenkins container ip and port
 }
 
 # Required for Jenkins websocket agents
 map $http_upgrade $connection_upgrade {
-  default upgrade;
-  '' close;
+    default upgrade;
+    '' close;
 }
 
 server {
-  listen          80;       # Listen on port 80 for IPv4 requests
+    listen 80;                    # Listen on port 80 for IPv4 requests
+    server_name $host;
+    return 301 https://$host:8443$request_uri; # replace '8443' with your https port
+}
 
-  server_name     127.0.0.1;  # replace '127.0.0.1' with your server domain name
+server {
+    listen          443 ssl;      # Listen on port 443 for IPv4 requests
+    server_name     $host:8443;   # replace '$host:8443' with your server domain name and port
 
-  # this is the jenkins web root directory
-  # (mentioned in the /etc/default/jenkins file)
-  root            /var/run/jenkins/war/;
+    # SSL certificate - replace as required with your own trusted certificate
+    ssl_certificate /etc/ssl/fullchain.pem;
+    ssl_certificate_key /etc/ssl/privkey.pem;
 
-  access_log      /var/log/nginx/jenkins/access.log;
-  error_log       /var/log/nginx/jenkins/error.log;
+    # logging
+    access_log      /var/log/nginx/jenkins.access.log;
+    error_log       /var/log/nginx/jenkins.error.log;
 
-  # pass through headers from Jenkins that Nginx considers invalid
-  ignore_invalid_headers off;
+    # this is the jenkins web root directory
+    # (mentioned in the /etc/default/jenkins file)
+    root            /var/jenkins_home/war/;
 
-  location ~ "^/static/[0-9a-fA-F]{8}\/(.*)$" {
-    # rewrite all static files into requests to the root
-    # E.g /static/12345678/css/something.css will become /css/something.css
-    rewrite "^/static/[0-9a-fA-F]{8}\/(.*)" /$1 last;
-  }
+    # pass through headers from Jenkins that Nginx considers invalid
+    ignore_invalid_headers off;
 
-  location /userContent {
-    # have nginx handle all the static requests to userContent folder
-    # note : This is the $JENKINS_HOME dir
-    root /var/lib/jenkins/;
-    if (!-f $request_filename){
-      # this file does not exist, might be a directory or a /**view** url
-      rewrite (.*) /$1 last;
-      break;
+    location ~ "^/static/[0-9a-fA-F]{8}\/(.*)$" {
+        # rewrite all static files into requests to the root
+        # E.g /static/12345678/css/something.css will become /css/something.css
+        rewrite "^/static/[0-9a-fA-F]{8}\/(.*)" /$1 last;
     }
-    sendfile on;
-  }
 
-  location / {
-      sendfile off;
-      proxy_pass         http://jenkins_app/;
-      proxy_http_version 1.1;
+    location /userContent {
+        # have nginx handle all the static requests to userContent folder
+        # note : This is the $JENKINS_HOME dir
+        root /var/jenkins_home/;
+        if (!-f $request_filename) {
+            # this file does not exist, might be a directory or a /**view** url
+            rewrite (.*) /$1 last;
+            break;
+        }
+        sendfile on;
+    }
 
-      # Required for Jenkins websocket agents
-      proxy_set_header   Connection        $connection_upgrade;
-      proxy_set_header   Upgrade           $http_upgrade;
+    location / {
+        sendfile off;
+        proxy_pass         http://jenkins;
+        proxy_redirect     default;
+        proxy_http_version 1.1;
 
-      proxy_set_header   Host              $host;
-      proxy_set_header   X-Real-IP         $remote_addr;
-      proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-      proxy_set_header   X-Forwarded-Proto $scheme;
-      proxy_set_header   X-Forwarded-Host  $server_name;
-      proxy_set_header   X-Forwarded-Port  8080; # replace '8080' with your server port number
-      proxy_max_temp_file_size 0;
+        # Required for Jenkins websocket agents
+        proxy_set_header   Connection        $connection_upgrade;
+        proxy_set_header   Upgrade           $http_upgrade;
 
-      #this is the maximum upload size
-      client_max_body_size       10m;
-      client_body_buffer_size    128k;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Forwarded-Host  $host;
+        proxy_set_header   X-Forwarded-Port  8443; # replace '8443' with your https port
+        proxy_max_temp_file_size 0;
 
-      proxy_connect_timeout      90;
-      proxy_send_timeout         90;
-      proxy_read_timeout         90;
-      proxy_buffering            off;
-      proxy_request_buffering    off; # Required for HTTP CLI commands
-      proxy_set_header Connection ""; # Clear for keepalive
-  }
+        #this is the maximum upload size
+        client_max_body_size       10m;
+        client_body_buffer_size    128k;
+
+        proxy_connect_timeout      90;
+        proxy_send_timeout         90;
+        proxy_read_timeout         90;
+        proxy_buffering            off;
+        proxy_request_buffering    off; # Required for HTTP CLI commands
+        proxy_set_header Connection ""; # Clear for keepalive
+    }
 
 }
 ```
 
-### docker-compose.yml
+## <a name="deploy"></a>Deploy
 
-The docker-compose.yml file defines how to orchestrate the containers when deployed and makes use of the parameters set in the `.env` file.
+Once configured the containers can be brought up using Docker Compose
 
-```yaml
-version: '3.8'
-services:
-
-  jenkins:
-    image: jenkins.nginx.docker:lts
-    build:
-      context: ./
-      dockerfile: Dockerfile
-    container_name: jenkins
-    ports:
-      - '2022:22'
-      - '50000:50000'
-      - '50022:50022'
-    volumes:
-      - ${JENKINS_HOME:-./jenkins_home}:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - UID_JENKINS=${UID_JENKINS:-1000}
-      - GID_JENKINS=${GID_JENKINS:-1000}
-    #  - JENKINS_OPTS=${JENKINS_OPTS:-"--prefix=/jenkins"}
-    restart: always
-
-  nginx:
-    image: nginx:latest
-    container_name: nginx
-    ports:
-      - '8080:80'
-    #  - '8443:443'
-    volumes:
-      - ${NGINX_DEFAULT_CONF:-./nginx/default.conf}:/etc/nginx/conf.d/default.conf
-      - ${NGINX_LOGS:-./logs/nginx/jenkins}:/var/log/nginx/jenkins
-    #  - ${NGINX_SSL:-./ssl}:/etc/ssl:ro
-    restart: always
-```
-
-## <a name="build"></a>Build the Jenkins image
-
-Once satisfied with the `.env` file and the value of `ARG BUILDER_TAG=` has been set, the jenkins container can be built using `docker-compose` [[3](https://github.com/docker/compose/releases)]. (example to use `ARG BUILDER_TAG=latest`)
-
-```
+```console
+source .env
 docker-compose pull
-docker-compose --env-file .env build
+docker-compose build
+docker-compose up -d
 ```
 
-The resulting image should look something like:
+After a few moments the containers should be observed as running
 
 ```console
-$ docker images
-REPOSITORY             TAG       IMAGE ID       CREATED         SIZE
-jenkins.nginx.docker   lts       5a62beac91ed   6 seconds ago   1.08GB
+$ docker-compose ps
+NAME                COMMAND                  SERVICE             STATUS              PORTS
+cicd-jenkins        "/sbin/tini -- /dock…"   jenkins             running             0.0.0.0:50000->50000/tcp
+cicd-nginx          "/docker-entrypoint.…"   nginx               running             0.0.0.0:8080->80/tcp, 0.0.0.0:8443->443/tcp
 ```
 
-## <a name="http"></a>Basic Deployment using http
+The Jenkins application can be reached at the designated host and port (e.g. [https://127.0.0.1:8443]()).
 
-**This is the default configuration for this repository**
+- **NOTE**: you will likely have to acknowledge the security risk if using the included self-signed certificate.
 
-Deploy to [http://127.0.0.1:8080]()
+![](./imgs/jenkins-unlock.png)
 
-### Configuration
-
-- `.env` - use the provided file
-- `nginx/default.conf` - use the provided file
-- `docker-compose.yml` - use the provide file
-
-### Run
+Copy the `Administrator password` from the docker log output of the jenkins container.
 
 ```console
-docker-compose --env-file .env up
-```
-
-You should notice output similar to:
-
-```console
-$ docker-compose --env-file .env up
-Creating network "jenkins-nginx-docker_default" with the default driver
-Creating nginx   ... done
-Creating jenkins ... done
-Attaching to jenkins, nginx
-nginx      | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
-nginx      | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
-nginx      | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
-nginx      | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
-nginx      | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
-nginx      | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
-nginx      | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
-nginx      | /docker-entrypoint.sh: Configuration complete; ready for start up
-jenkins    | Running from: /usr/share/jenkins/jenkins.war
-jenkins    | webroot: EnvVars.masterEnvVars.get("JENKINS_HOME")
-jenkins    | 2021-04-02 17:56:10.467+0000 [id=1]	INFO	org.eclipse.jetty.util.log.Log#initialized: Logging initialized @238ms to org.eclipse.jetty.util.log.JavaUtilLog
-jenkins    | 2021-04-02 17:56:10.565+0000 [id=1]	INFO	winstone.Logger#logInternal: Beginning extraction from war file
-jenkins    | 2021-04-02 17:56:10.591+0000 [id=1]	WARNING	o.e.j.s.handler.ContextHandler#setContextPath: Empty contextPath
-jenkins    | 2021-04-02 17:56:10.637+0000 [id=1]	INFO	org.eclipse.jetty.server.Server#doStart: jetty-9.4.38.v20210224; built: 2021-02-24T20:25:07.675Z; git: 288f3cc74549e8a913bf363250b0744f2695b8e6; jvm 1.8.0_282-b08
+$ docker-compose logs jenkins
+cicd-jenkins  | usermod: no changes
 ...
+cicd-jenkins  | 2022-01-26 16:37:12.863+0000 [id=34]	INFO	jenkins.install.SetupWizard#init:
+cicd-jenkins  |
+cicd-jenkins  | *************************************************************
+cicd-jenkins  | *************************************************************
+cicd-jenkins  | *************************************************************
+cicd-jenkins  |
+cicd-jenkins  | Jenkins initial setup is required. An admin user has been created and a password generated.
+cicd-jenkins  | Please use the following password to proceed to installation:
+cicd-jenkins  |
+cicd-jenkins  | 1cd0eea03abc4ff1b184547625dd48f2
+cicd-jenkins  |
+cicd-jenkins  | This may also be found at: /var/jenkins_home/secrets/initialAdminPassword
+cicd-jenkins  |
+cicd-jenkins  | *************************************************************
+cicd-jenkins  | *************************************************************
+cicd-jenkins  | *************************************************************
+cicd-jenkins  |
+cicd-jenkins  | 2022-01-26 16:37:24.156+0000 [id=34]	INFO	jenkins.InitReactorRunner$1#onAttained: Completed initialization
 ```
 
-And find the running instance at [http://127.0.0.1:8080]()
+Install the plugins you are interested in
 
-![](docs/images/first-run-http.png)
+![](./imgs/jenkins-plugins-select.png)
 
-By default the new instance will run in **Security Realm = None** mode which means anyone who has access to the Jenkin's URL can administrate it. This can (and should) be changed by updating the Global Security settings.
+Setup an Administrative user
 
-`Manage Jenkins` > `Configure Global Security` > **Security Realm**
+![](./imgs/jenkins-admin-user.png)
 
-![](docs/images/security-realm.png)
+Confirm the URL and start using Jenkins
 
-Make sure to address any Administrative and/or Security alerts that are denoted in the upper right portion of the UI.
+![](./imgs/jenkins-url.png)
+![](./imgs/jenkins-is-ready.png)
+![](./imgs/jenkins-landing-page.png)
 
-![](docs/images/alert-monitor-1.png)
-![](docs/images/alert-monitor-2.png)
+## <a name="github"></a>GitHub OAuth integration
 
-When finished you can issue a `ctrl-c` to kill the running containers and bring down the services. The user will like deploy using the `-d` parameter once they are satisfied with configuration to run the containers in daemonized mode such that they persist beyond the user's terminal session.
+**GOAL**: Use GitHub to authenticate user access into Jenkins and authorize actions within it
 
-### HTTP or HTTPS?
+- Authorization is delegated using **Matrix-based security** by `organization` or `organization*repo` represented as **Group** membership at the user level
+- Do **NOT** log off the initial Administrator account prior to establishing a new Administrative User or Group that is accessible to an authorized GitHub user
+    - Once the **GitHub Authentication Plugin** is activated you will lose the standard login option of Username/Password
+    - After installing, the `<securityRealm>` class should have been updated in your `/var/lib/jenkins/config.xml` file. The value of `<clientID>` should agree with what you pasted into the admin UI. If it doesn't or you still can't log in, reset to `<securityRealm class="hudson.security.HudsonPrivateSecurityRealm">` and restart Jenkins from the command-line.
 
-Both of these are protocols for transferring the information of a particular website between the Web Server and Web Browser. But what’s difference between these two? Well, extra "s" is present in https and that makes it secure! 
+### Install the GitHub OAuth Plugin
 
-A very short and concise difference between http and https is that https is much more secure compared to http. https = http + cryptographic protocols.
+- From Plugin Manager search for [GitHub Authentication](https://plugins.jenkins.io/github-oauth/)
+- Download and install after restart
 
-Main differences between HTTP and HTTPS
+### Setup
 
-- In HTTP, URL begins with [http://]() whereas an HTTPS URL starts with [https://]()
-- HTTP uses port number `80` for communication and HTTPS uses `443`
-- HTTP is considered to be unsecured and HTTPS is secure
-- HTTP Works at Application Layer and HTTPS works at Transport Layer
-- In HTTP, Encryption is absent whereas Encryption is present in HTTPS
-- HTTP does not require any certificates and HTTPS needs SSL Certificates (signed, unsigned or self generated)
+Before configuring the plugin you must create a GitHub application registration.
 
-## <a name="https"></a>Basic Deployment using https and SSL
+1. Visit [https://github.com/settings/applications/new](https://github.com/settings/applications/new) to create a GitHub application registration.
+2. The values for application name, homepage URL, or application description don't matter. They can be customized however desired.
+3. However, the authorization callback URL takes a specific value. It must be `https://jenkins.example.com/securityRealm/finishLogin` where jenkins.example.com is the location of the Jenkins server.
+The important part of the callback URL is `/securityRealm/finishLogin`
+4. Finish by clicking Register application.
 
-Deploy to [https://127.0.0.1:8443]()
+The `Client ID` and the `Client Secret` will be used to configure the Jenkins Security Realm. Keep the page open to the application registration so this information can be copied to your Jenkins configuration.
 
-### Configuration
+### Security Realm in Global Security
 
-- SSL certificates - use the supplied example certificate pair or provide your own certificates
-- `.env` - use the provided file
-- `nginx/default.conf` - update the provided file as follows
-    - `cp nginx/default.conf.https_template nginx/default.conf`
-- `docker-compose.yml` - update the provided file as follows
-    - uncomment nginx.ports: `- '8443:443'`
-    - uncomment nginx.volumes: `- ${NGINX_SSL:-./ssl}:/etc/ssl:ro`
+The security realm in Jenkins controls authentication (i.e. you are who you say you are). The GitHub Authentication Plugin provides a security realm to authenticate Jenkins users via GitHub OAuth.
 
-### Run
+1. In the Global Security configuration choose the Security Realm to be **GitHub Authentication Plugin**.
+2. The settings to configure are: GitHub Web URI, GitHub API URI, Client ID, Client Secret, and OAuth Scope(s).
+3. If you're using GitHub Enterprise then the API URI is [https://ghe.example.com/api/v3]().
+The GitHub Enterprise API URI ends with `/api/v3`.
+4. The recommended minimum GitHub OAuth scopes are `read:org,user:email`.
+The recommended scopes are designed for using both authentication and authorization functions in the plugin. If only authentication is being used then the scope can be further limited to `(no scope)` or `user:email`.
+
+In the plugin configuration pages each field has a little (**?**) next to it. Click on it for help about the setting.
+
+![](./imgs/jenkins-github-oauth.png)
+
+### Authorization in Global Security.
+
+The authorization configuration in Jenkins controls what your users can do (i.e. read jobs, execute builds, administer permissions, etc.). The GitHub OAuth Plugin supports multiple ways of configuring authorization.
+
+It is highly recommended that you configure the security realm and log in via GitHub OAuth before configuring authorization. This way Jenkins can look up and verify users and groups if configuring matrix-based authorization.
+
+### Matrix-based Authorization strategy
+
+Control user authorization using **Matrix-based security** or **Project-based Matrix Authorization Strategy**. Project-based Matrix Authorization Strategy allows one to configure authorization globally per project and, when using Project-based Matrix Authorization Strategy with the CloudBees folder plugin, per folder.
+
+There are a few built-in authorizations to consider.
+
+- `anonymous` - is anyone who has not logged in. Recommended permissions are just `Job/Discover` and `Job/ViewStatus`.
+- `authenticated` - is anyone who has logged in. You can configure permissions for anybody who has logged into Jenkins. Recommended permissions are `Overall/Read` and `View/Read`.
+`anonymous` and `authenticated` usernames are case sensitive and must be lower case. This is a consideration when configuring authorizations via Groovy. Keep in mind that anonymous shows up as Anonymous in the Jenkins UI.
+
+You can configure authorization based on GitHub users, organizations, or teams.
+
+- `username` - give permissions to a specific GitHub username.
+- `organization` - give permissions to every user that belongs to a specific GitHub organization.
+- `organization*team` - give permissions to a specific GitHub team of a GitHub organization. Notice that organization and team are separated by an asterisk (*).
+
+![](./imgs/jenkins-authorization-matrix.png)
+
+Related to the screenshot above:
+
+- User: `Michael J. Stealey` is an Administrative user that authenticated using the GitHub OAuth Plugin
+- User: `Jenkins Admin` is the original admin account but is no longer reachable using the GitHub OAuth Plugin
+- Group: `RENCI-NRIG` is a GitHub Organization reflected as a Group for any users who belong to that organization and is being used to set **Job** based authorizations within Jenkins
+
+**Reference**: 
+
+- Documentation: [https://plugins.jenkins.io/github-oauth/](https://plugins.jenkins.io/github-oauth/)
+- GitHub: [https://github.com/jenkinsci/github-oauth-plugin](https://github.com/jenkinsci/github-oauth-plugin)
+
+## <a name="teardown"></a>Teardown
+
+For a complete teardown all containers must be stopped and removed along with the volumes and network that were created for the application containers
+
+Commands
 
 ```console
-docker-compose --env-file .env up
+docker-compose stop
+docker-compose rm -fv
+docker-network rm cicd-jenkins
+# removal calls may require sudo rights depending on file permissions
+rm -rf ./jenkins_home
+rm -rf ./logs
 ```
 
-Navigate your browser to [https://127.0.0.1:8443]()
-
-Notice that the URL is now using `https` at the beginning and you can view the certificate information
-![](docs/images/first-run-https-0.png)
-
-You may need to accept the risk of using a "non trusted" certificate in your browser before it will let you proceed to the site
-![](docs/images/first-run-https-1.png)
-
-Upon reaching the landing page you should notice something similar to this
-![](docs/images/first-run-https-2.png)
-
-
-## <a name="custom"></a>Custom Deployment using https with SSL and URL-slug /jenkins
-
-Deploy to [https://127.0.0.1:8443/jenkins]()
-
-### Configuration
-
-- SSL certificates - use the supplied example certificate pair or provide your own certificates
-- `.env` - use the provided file
-- `nginx/default.conf` - update the provided file as follows
-    - `cp nginx/default.conf.custom_template nginx/default.conf`
-- `docker-compose.yml` - update the provided file as follows
-    - uncomment jenkins.environment: `- JENKINS_OPTS=${JENKINS_OPTS:-"--prefix=/jenkins"}`
-    - uncomment nginx.ports: `- '8443:443'`
-    - uncomment nginx.volumes: `- ${NGINX_SSL:-./ssl}:/etc/ssl:ro`
-
-### Run
+Expected output
 
 ```console
-docker-compose --env-file .env up
+$ docker-compose stop
+[+] Running 2/2
+ ⠿ Container cicd-nginx    Stopped                                                                                                     0.9s
+ ⠿ Container cicd-jenkins  Stopped                                                                                                     1.0s
+$ docker-compose rm -fv
+Going to remove cicd-nginx, cicd-jenkins
+[+] Running 2/0
+ ⠿ Container cicd-jenkins  Removed                                                                                                     0.0s
+ ⠿ Container cicd-nginx    Removed                                                                                                     0.0s
+$ docker network rm cicd-jenkins
+cicd-jenkins
+$ rm -rf ./jenkins_home
+$ rm -rf ./logs
 ```
 
-Similar to the https example, the custom example will be running on https and use a SLL certificate. If you navigate to the base URL of [https://127.0.0.1:8443]() you'll get a 404 response since it's not mapped
-![](docs/images/first-run-custom-1.png)
+## <a name="references"></a>References
 
-However using the custom URL you'll see the site deployed as expected [https://127.0.0.1:8443/jenkins/]()
-![](docs/images/first-run-custom-2.png)
+- Jenkins Docker images: [https://github.com/jenkinsci/docker](https://github.com/jenkinsci/docker)
+- Jenkins Documentation: [https://www.jenkins.io/doc/](https://www.jenkins.io/doc/)
+- Docker Documentation: [https://docs.docker.com](https://docs.docker.com)
 
-## <a name="ssl-certs"></a>SSL Certificates
+---
 
-**What are SSL Certificates?**
+## <a name="notes"></a>Notes
 
-SSL Certificates are small data files that digitally bind a cryptographic key to an organization’s details. When installed on a web server, it activates the padlock and the https protocol and allows secure connections from a web server to a browser. Typically, SSL is used to secure credit card transactions, data transfer and logins, and more recently is becoming the norm when securing browsing of social media sites.
+General information regarding standard Docker deployment of Jenkins for reference purposes
 
-SSL Certificates bind together:
+### Host volume mounts
 
-- A domain name, server name or hostname.
-- An organizational identity (i.e. company name) and location.
+The provided configuration creates two host volume mounts that may require some permissions adjustments to work correctly.
 
-See [SSL - certificates for development](ssl/README.md) for more details
+1. `${JENKINS_LOCAL_HOME}:/var/jenkins_home` - Maps the `/var/jenkins_home` directory inside the `jenkins` container to the Docker volume identified by `${JENKINS_LOCAL_HOME}`. Other Docker containers controlled by this Docker container’s Docker daemon can mount data from Jenkins (e.g. the Nginx container).
 
+    Generally speaking it is suggested to set the jenkins user UID and GID values to that of the user running the application.
+    
+    ```console
+    $ id -u
+    1011
+    $ id -g
+    1011
+    ```
+    
+    Then in the `.env` file set
+    
+    ```ini
+    ...
+    export JENKINS_UID=1011
+    export JENKINS_GID=1011
+    ...
+    ```
 
-## <a name="dind"></a>Docker in Docker test
+2. `${NGINX_LOGS}:/var/log/nginx` - Maps the `/var/log/nginx` directory inside the `nginx` container to the Docker volume identified by `${NGINX_LOGS}`
 
-Create a simple test to verify that the Jenkins installation can run Docker based commands within a job
+    There is no easy to change user UID/GID flag in Nginx, you either need to rebuild the Docker image with a custom UID/GID set, or just accept the log output as it is and use a privileged account to modify the files if needed.
 
-### Create a new job named "DinD test"
+### Deploy with /jenkins prefix
 
-Select "New Item" from the dashboard and create a new Freestyle project
+At times it is desirable to run Jenkins at a non-root URL such as [https://127.0.0.1:8443/jenkins]()
 
-![](docs/images/dind-test-0.png)
+This can be achieved by adjusting a few parameters
 
-### Add some code to run
+1. Modify the `docker-compose.yml` file to include in `JENKINS_OPTS`
 
-Under the "Build" section add a new "Execute Shell" entry with the following and save (**NOTE**: `sudo` is required prior to the `docker` call)
+    ```yaml
+    ...
+      jenkins:
+        # default ports 8080, 50000 - expose mapping as needed to host
+        build:
+          context: ./jenkins
+          dockerfile: Dockerfile
+        container_name: cicd-jenkins
+        restart: unless-stopped
+        networks:
+          - jenkins
+        ports:
+          - "50000:50000"
+        environment:
+          # Uncomment JENKINS_OPTS to add prefix: e.g. https://127.0.0.1:8443/jenkins
+          - JENKINS_OPTS="--prefix=/jenkins"  # <-- Uncomment this line
+          - JENKINS_UID=${JENKINS_UID}
+          - JENKINS_GID=${JENKINS_GID}
+        volumes:
+          - ${JENKINS_LOCAL_HOME}:/var/jenkins_home
+          - ${HOST_DOCKER_SOCK}:/var/run/docker.sock
+    ```
 
-```bash
-#!/usr/bin/env bash
+2. Modify `.env` to use the `nginx/prefix_jenkins.conf` file instead of `nginx/default.conf`
 
-sudo docker run hello-world
+    ```ini
+    ...
+    # Nginx Settings
+    export NGINX_CONF=./nginx/prefix_jenkins.conf
+    export NGINX_SSL_CERTS=./ssl
+    export NGINX_LOGS=./logs/nginx
+    ```
 
-exit 0;
-```
+3. Follow the **Deploy** instructions from above
 
-![](docs/images/dind-test-1.png)
+### Let's Encrypt SSL Certificate
 
-### Run the job
-
-Choose the "Build Now" option from the project's main page and allow it to complete
-
-![](docs/images/dind-test-2.png)
-
-### Verify the output
-
-On completion you should observe a new item in the "Build History", click the numbered job run and then choose to view the "Console Output"
-
-![](docs/images/dind-test-3.png)
-
-Upon reviewing the Console Ouptut you should see that the job successfully ran the [hello-world](https://hub.docker.com/_/hello-world/) docker container
-
-![](docs/images/dind-test-4.png)
-
-
-## <a name="debugging"></a>Trouble Shooting
-
-### Nginx configuration
-
-Since the `default.conf` file is mounted from the host it can be updated in real-time. Once changes have been made, the user should validate and reload the configuration.
-
-- Example validation:
-
-  ```console
-  $ docker exec nginx /usr/sbin/nginx -t
-  nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
-  nginx: configuration file /etc/nginx/nginx.conf test is successful
-  ```
-
-- Example reload:
-
-  ```console
-  $ docker exec nginx /usr/sbin/nginx -s reload
-  Reloading nginx: nginx.
-  ```
-
-
-## <a name="ref"></a>References
-
-[1] Official Jenkins Docker Image: [https://hub.docker.com/r/jenkins/jenkins](https://hub.docker.com/r/jenkins/jenkins)
-
-[2] Get into DevOps (blog): [https://getintodevops.com/blog/the-simple-way-to-run-docker-in-docker-for-ci](https://getintodevops.com/blog/the-simple-way-to-run-docker-in-docker-for-ci)
-
-[3] Docker Compose Github Releases: [https://github.com/docker/compose/releases](https://github.com/docker/compose/releases)
-
-[4] Advantage of Tini: [https://github.com/krallin/tini/issues/8](https://github.com/krallin/tini/issues/8)
-
-[5] Jenkins behind an NGinX reverse proxy: [https://www.jenkins.io/doc/book/system-administration/reverse-proxy-configuration-nginx/](https://www.jenkins.io/doc/book/system-administration/reverse-proxy-configuration-nginx/)
-
-Jenkins User Documentation: [https://www.jenkins.io/doc/](https://www.jenkins.io/doc/)
+Use: [https://github.com/RENCI-NRIG/ez-letsencrypt](https://github.com/RENCI-NRIG/ez-letsencrypt) - A shell script to obtain and renew [Let's Encrypt](https://letsencrypt.org/) certificates using Certbot's `--webroot` method of [certificate issuance](https://certbot.eff.org/docs/using.html#webroot).
